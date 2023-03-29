@@ -60,12 +60,12 @@ impl Default for Settings {
             width: 2.0,
             pixels_x: PX_X,
             pixels_y: PX_Y,
-            iterations: 101,
-            modulus_bounds: 10.0,
+            iterations: 11,
+            modulus_bounds: 15.0,
             constant: Constant::Const((0.4, 0.2)),
             scale: PX_Y as f64 / PX_X as f64,
             col_pow: 2,
-            show_axes: true,
+            show_axes: false,
             done_frames: 0,
         }
     }
@@ -77,7 +77,7 @@ fn compute_next((a1, a2): (f64, f64), (c1, c2): (f64, f64)) -> (f64, f64) {
     let z = Complex64::new(a1, a2);
     let c = Complex64::new(c1, c2);
 
-    let result = z * z * z * z * z + z;
+    let result = z * z * z * z * z + z + c;
     (result.re, result.im)
 }
 
