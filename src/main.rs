@@ -11,8 +11,8 @@ use winit::{
 
 use winit_input_helper::WinitInputHelper;
 
-const PX_X: usize = 1920;
-const PX_Y: usize = 1000;
+const PX_X: usize = 800;
+const PX_Y: usize = 800;
 
 struct Settings {
     bottom_left: (f64, f64),
@@ -35,7 +35,8 @@ impl Settings {
     }
 
     fn pos_y(&self, y: usize) -> f64 {
-        ((1.0 - (y as f64 / self.pixels_y as f64)) + (0.5 / self.pixels_y as f64)) * (self.width * self.scale)
+        ((1.0 - (y as f64 / self.pixels_y as f64)) + (0.5 / self.pixels_y as f64))
+            * (self.width * self.scale)
             + self.bottom_left.1
     }
 
@@ -60,8 +61,8 @@ impl Default for Settings {
             width: 2.0,
             pixels_x: PX_X,
             pixels_y: PX_Y,
-            iterations: 11,
-            modulus_bounds: 15.0,
+            iterations: 31,
+            modulus_bounds: 10.0,
             constant: Constant::Const((0.4, 0.2)),
             scale: PX_Y as f64 / PX_X as f64,
             col_pow: 2,
@@ -77,7 +78,8 @@ fn compute_next((a1, a2): (f64, f64), (c1, c2): (f64, f64)) -> (f64, f64) {
     let z = Complex64::new(a1, a2);
     let c = Complex64::new(c1, c2);
 
-    let result = z * z * z * z * z + z + c;
+    // let result = weierstrass(z, Complex64::new(1.0, 1.0), c);
+    let result = z * z + c;
     (result.re, result.im)
 }
 
@@ -106,6 +108,7 @@ fn map(left: f64, right: f64, val: f64) -> f64 {
 }
 
 const COLOURS: [u8; 9] = [0, 15, 30, 64, 255, 202, 12, 0, 0];
+// const COLOURS: [u8; 9] = [255, 255, 255, 0, 0, 0, 12, 0, 0];
 const COLOURS_F: [f64; 9] = {
     let mut result = [0.0; 9];
     let mut i = 0;
@@ -117,14 +120,19 @@ const COLOURS_F: [f64; 9] = {
 };
 
 fn make_colour<const O: usize>(map_1: f64, map_2: f64, f_v: f64) -> f64 {
-    COLOURS_F[O] * (1.0 - map_1) + COLOURS_F[3 + O] * map_1 * (1.0 - map_2) + f_v * map_2
+    COLOURS_F[O] * (1.0 - map_1) + COLOURS_F[3 + O] * map_1 * (1.0 - map_2) + f_v * COLOURS_F[6 + O]
 }
 
 fn hsv(x: f64, k: f64) -> f64 {
     (((x + k).rem_euclid(6.0) - 3.0).abs() - 1.0).clamp(0.0, 1.0)
 }
 
-fn gradient(iterations: f64, max_iterations: usize, pow: usize, result: (f64, f64)) -> (f64, f64, f64) {
+fn gradient(
+    iterations: f64,
+    max_iterations: usize,
+    pow: usize,
+    result: (f64, f64),
+) -> (f64, f64, f64) {
     let p = (iterations / max_iterations as f64).powi(pow as _);
 
     let angle = 6.0 * result.1.atan2(result.0) / (2.0 * std::f64::consts::PI);
@@ -135,16 +143,25 @@ fn gradient(iterations: f64, max_iterations: usize, pow: usize, result: (f64, f6
     // let r = angle.cos().max(0.0);
     // let g = (angle - std::f64::consts::FRAC_PI_3 * 2.0).cos().max(0.0);
     // let b = (angle - std::f64::consts::FRAC_PI_3 * 4.0).cos().max(0.0);
-    let (r, g, b) = (hsv(angle, 0.0), hsv(angle, 2.0), hsv(angle, 4.0));
-    // let (r, g, b) = (0.0, 0.0, 0.0);
+    // let (r, g, b) = (hsv(angle, 0.0), hsv(angle, 2.0), hsv(angle, 4.0));
+    let (r, g, b) = (0.0, 0.0, 0.0);
 
     let map_1 = map(0.0, 0.9, p);
     let map_2 = map(0.9, 1.0, p);
 
-    (make_colour::<0>(map_1, map_2, r), make_colour::<1>(map_1, map_2, g), make_colour::<2>(map_1, map_2, b))
+    (
+        make_colour::<0>(map_1, map_2, r),
+        make_colour::<1>(map_1, map_2, g),
+        make_colour::<2>(map_1, map_2, b),
+    )
 }
 
-fn draw(settings: &Settings, buffer: &mut [u8], cont_buffer: &mut [f64], acc_buffer: &mut [(f64, f64)]) {
+fn draw(
+    settings: &Settings,
+    buffer: &mut [u8],
+    cont_buffer: &mut [f64],
+    acc_buffer: &mut [(f64, f64)],
+) {
     buffer
         .par_chunks_mut(settings.pixels_x * 4)
         .zip(cont_buffer.par_chunks_mut(settings.pixels_x))
@@ -155,16 +172,23 @@ fn draw(settings: &Settings, buffer: &mut [u8], cont_buffer: &mut [f64], acc_buf
             // let y = -y;
             for (x, (screen_result, (cont_result, acc_result))) in chunk_screen
                 .chunks_exact_mut(4)
-                .zip(chunk_cont.iter_mut().zip(chunk_acc.iter_mut())).enumerate() {
+                .zip(chunk_cont.iter_mut().zip(chunk_acc.iter_mut()))
+                .enumerate()
+            {
                 let x = settings.pos_x(x);
 
                 if settings.show_axes && (y.abs() < 0.01 || x.abs() < 0.01) {
                     screen_result.copy_from_slice(&[255, 255, 255, 255]);
-                    continue
+                    continue;
                 }
 
-                let r_x = (fastrand::f64() * 2.0 - 1.0) * (0.5 / settings.pixels_x as f64) * settings.width;
-                let r_y = (fastrand::f64() * 2.0 - 1.0) * (0.5 / settings.pixels_y as f64) * settings.width * settings.scale;
+                let r_x = (fastrand::f64() * 2.0 - 1.0)
+                    * (0.5 / settings.pixels_x as f64)
+                    * settings.width;
+                let r_y = (fastrand::f64() * 2.0 - 1.0)
+                    * (0.5 / settings.pixels_y as f64)
+                    * settings.width
+                    * settings.scale;
 
                 let (value, final_values) = num_iterations(
                     (x + r_x, y + r_y),
@@ -179,7 +203,12 @@ fn draw(settings: &Settings, buffer: &mut [u8], cont_buffer: &mut [f64], acc_buf
 
                 let screen_value = *cont_result / settings.done_frames as f64;
 
-                let value = gradient(screen_value, settings.iterations, settings.col_pow, *acc_result);
+                let value = gradient(
+                    screen_value,
+                    settings.iterations,
+                    settings.col_pow,
+                    *acc_result,
+                );
                 let value_r = (value.0 * 255.0) as u8;
                 let value_g = (value.1 * 255.0) as u8;
                 let value_b = (value.2 * 255.0) as u8;
@@ -223,7 +252,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // The one and only event that winit_input_helper doesn't have for us...
         if let Event::RedrawRequested(_) = event {
             settings.done_frames += 1;
-            draw(&settings, pixels.get_frame_mut(), &mut cont_buffer, &mut acc_buffer);
+            draw(
+                &settings,
+                pixels.get_frame_mut(),
+                &mut cont_buffer,
+                &mut acc_buffer,
+            );
             if let Err(err) = pixels.render() {
                 eprintln!("pixels.render: {:?}", err);
                 *control_flow = ControlFlow::Exit;
